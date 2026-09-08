@@ -1,0 +1,7 @@
+run: docker compose up -d && npm run dev
+seed: curl -X POST http://localhost:3000/campaigns -H "Content-Type: application/json" -d '{"blogPostId":"blog-1","title":"Why Idempotency Matters","body":"A retried request should never create a second record."}'
+test: npm test
+base_url: http://localhost:3000
+endpoints:
+  - GET /health
+  - POST /campaigns
