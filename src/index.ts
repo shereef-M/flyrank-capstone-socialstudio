@@ -1,9 +1,17 @@
 import "dotenv/config";
 import express from "express";
+import path from "node:path";
 import { prisma } from "./lib/prisma";
+import { campaignsRouter } from "./routes/campaigns";
 
 const app = express();
 app.use(express.json());
+
+// Serves generated image variants at /uploads/<file>.jpg
+app.use(
+  "/uploads",
+  express.static(path.join(process.cwd(), "public", "uploads")),
+);
 
 app.get("/health", async (_req, res) => {
   try {
@@ -18,6 +26,8 @@ app.get("/health", async (_req, res) => {
     });
   }
 });
+
+app.use(campaignsRouter);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(port, () => {
