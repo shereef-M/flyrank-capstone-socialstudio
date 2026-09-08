@@ -1,0 +1,40 @@
+{
+  "name": "flyrank-capstone-socialstudio",
+  "version": "1.0.0",
+  "description": "Turns one published blog post into a scheduled, multi-platform socialcampaign, the right image variant and caption per platform, published through a reliable adapter layer that survives retries, rate limits, and crashes. Built against a provided fake social platform server; no real social accounts are ever touched.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shereef-M/flyrank-capstone-socialstudio.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shereef-M/flyrank-capstone-socialstudio/issues"
+  },
+  "homepage": "https://github.com/shereef-M/flyrank-capstone-socialstudio#readme",
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bullmq": "^6.3.4",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "sharp": "^0.35.4",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.5.0",
+    "prisma": "^6.19.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

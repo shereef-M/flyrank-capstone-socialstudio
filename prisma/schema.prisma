@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  publishing
+  published
+  failed
+}
+
+enum PostStatus {
+  queued
+  publishing
+  published
+  failed
+}
+
+enum Platform {
+  instagram
+  x
+}
+
+model Campaign {
+  id            String         @id @default(uuid())
+  blogPostId    String
+  title         String
+  body          String
+  sourceImageUrl String
+  status        CampaignStatus @default(draft)
+  scheduledFor  DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  posts SocialPostEntry[]
+
+  @@index([status])
+  @@index([scheduledFor])
+}
+
+model SocialPostEntry {
+  id              String     @id @default(uuid())
+  campaignId      String
+  campaign        Campaign   @relation(fields: [campaignId], references: [id])
+  platform        Platform
+  imageVariantUrl String?
+  caption         String?
+  idempotencyKey  String     @unique
+  status          PostStatus @default(queued)
+  externalPostId  String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  webhookEvents WebhookEvent[]
+
+  // one entry per campaign+platform — never two rows for the same post
+  @@unique([campaignId, platform])
+  @@index([status])
+}
+
+model PlatformToken {
+  id                   String   @id @default(uuid())
+  platform             Platform @unique
+  encryptedAccessToken String
+  iv                   String
+  createdAt            DateTime @default(now())
+}
+
+model WebhookEvent {
+  id                 String   @id @default(uuid())
+  socialPostEntryId  String
+  socialPostEntry    SocialPostEntry @relation(fields: [socialPostEntryId], references: [id])
+  signatureValid     Boolean
+  rawPayload         String
+  receivedAt         DateTime @default(now())
+
+  @@index([socialPostEntryId])
+}
