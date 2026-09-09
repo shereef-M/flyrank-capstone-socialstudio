@@ -31,3 +31,11 @@ Two real mistakes surfaced during testing, both caught by actually running the s
 Also worth noting: my own sandbox environment reset itself mid-session partway through building this phase (a known limitation, not something either of us caused) nothing on my actual project was affected, but it meant re-verifying the code from scratch on the AI's side before handing it to me.
 
 Verification for this phase was almost entirely live, not just unit tests: the fake platform's token/idempotency/429 behavior, the retry adapter's actual wait time against a real forced rate limit, the full publish-now → webhook → status-published loop, a genuine duplicate publish returning the same post id, and a forged webhook signature being rejected with the real data left untouched.
+
+## Phase 4 — Durable scheduling
+
+AI extracted the publish logic into a shared `publishCampaign()` function (so the immediate `publish-now` endpoint and the new scheduled worker runidentical code, not two copies that could drift), then built the BullMQ queue, the `/schedule` endpoint, and a separate worker process.
+
+Same mistake pattern as Phase 3, happened again: a file AI gave me to create (`src/lib/publish-campaign.ts`) never actually got typed/saved on my end, and the app crashed on startup with "Cannot find module" pointing straight at the missing file. Same fix both times check the fileactually exists before assuming it's just an editor error. Worth being more careful about this myself going forward, not just relying on AI to catch it after the fact.
+
+Verification here was fully live, including the actual failure mode we care about: scheduled a campaign 15 seconds out, deliberately did NOT start the worker, confirmed via the API that the campaign sat at "scheduled" with posts still "queued" well past its scheduled time proving the job wasn't lost with nothing watching. Then started the worker for the first time and watched it immediately pick up and complete the overdue job, with no duplicate posts. That's the actual crash-resume guarantee, demonstrated end to end, not asserted.

@@ -40,13 +40,6 @@ X: "Why Idempotency Matters\n\nA retried request should never create a second re
 \`\`\`
 
 ## Adapter layer
-
-### ✅ SocialPublisher interface, ≥2 implementations
-
-`FakeInstagramPublisher` and `FakeXPublisher` both implement the same
-`SocialPublisher` interface, differing only in which platform path they
-call. Both went through `POST /campaigns/:id/publish-now` successfully:
-
 ### ✅ SocialPublisher interface, ≥2 implementations
 
 `FakeInstagramPublisher` and `FakeXPublisher` both implement the same
@@ -82,7 +75,31 @@ Result: { externalPostId: 'fake-post-99dbf2f6-...', deduplicated: false }
 Elapsed: 2137ms (Retry-After was 2 seconds — it waited, then retried and succeeded)
 ```
 
-### ⬜ Durable scheduling (crash-resume, no duplicates) — not yet done (Phase 4)
+### ✅ Durable scheduling (crash-resume, no duplicates)
+
+Campaign scheduled 15 seconds out. Confirmed the job survived with **no worker running at all** while its scheduled time passed:
+
+```
+curl .../schedule -d '{"scheduledFor":"2026-09-09T10:52:54.000Z"}' → "status":"scheduled"
+
+[15+ seconds pass, no worker started]
+
+curl .../campaigns/6e518eb9-... → "status":"scheduled", posts still "status":"queued" (scheduledFor time has already passed — job sat durably in Redis, untouched, because nothing was watching yet)
+```
+
+Then the worker was started for the first time:
+
+```
+$ npm run worker Publish worker started — waiting for scheduled campaigns...
+[worker] publishing campaign 6e518eb9-... (job 6e518eb9-...)
+[worker] done with campaign 6e518eb9-...: [
+  { platform: 'x', accepted: true, externalPostId: 'fake-post-a089efbd-...', deduplicated: false },
+  { platform: 'instagram', accepted: true, externalPostId: 'fake-post-8ae8222e-...', deduplicated: false }
+]
+[worker] job 6e518eb9-... completed
+```
+
+It picked up and completed the overdue job immediately proving the schedule survives a worker not running at the scheduled time (the same as a crash or deploy would look), with no duplicate posts created.
 
 ## Status & trust
 
