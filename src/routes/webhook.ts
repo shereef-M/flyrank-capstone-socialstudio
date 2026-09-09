@@ -62,12 +62,24 @@ webhookRouter.post(
     // Status only ever changes because of a *verified* webhook — never
     // because the initial publish call was accepted.
     if (payload.socialPostEntryId) {
-      await prisma.socialPostEntry.update({
+      const updatedPost = await prisma.socialPostEntry.update({
         where: { id: payload.socialPostEntryId },
         data: { status: "published", externalPostId: payload.externalPostId },
       });
-    }
 
+      // If every post in this campaign is now published, the campaign
+      // itself is done — this is a rollup, not a separate source of truth.
+      const siblings = await prisma.socialPostEntry.findMany({
+        where: { campaignId: updatedPost.campaignId },
+      });
+      const allPublished = siblings.every((p) => p.status === "published");
+      if (allPublished) {
+        await prisma.campaign.update({
+          where: { id: updatedPost.campaignId },
+          data: { status: "published" },
+        });
+      }
+    }
     res.status(200).json({ received: true });
   },
 );
