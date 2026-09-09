@@ -40,6 +40,7 @@ X: "Why Idempotency Matters\n\nA retried request should never create a second re
 \`\`\`
 
 ## Adapter layer
+
 ### ✅ SocialPublisher interface, ≥2 implementations
 
 `FakeInstagramPublisher` and `FakeXPublisher` both implement the same
@@ -51,7 +52,31 @@ call. Both went through `POST /campaigns/:id/publish-now` successfully:
 {"platform":"x","accepted":true,"externalPostId":"fake-post-3605e450-...","deduplicated":false}
 ```
 
-### ⬜ OAuth tokens encrypted at rest — not yet done
+### ✅ OAuth tokens encrypted at rest
+
+Automated round-trip test:
+
+```
+✓ tests/crypto.test.ts (4 tests) 9ms
+  ✓ round-trips a token exactly
+  ✓ never stores the plaintext token inside the ciphertext
+  ✓ produces a different ciphertext each time (random IV)
+  ✓ fails to decrypt with a tampered ciphertext
+```
+
+Live proof — queried the database directly (not through our own API, since a "decrypt token" endpoint should never exist even for demo purposes):
+
+```
+$ docker exec -it flyrank-capstone-socialstudio-postgres-1 psql -U socialstudio -d socialstudio \
+  -c 'SELECT platform, "encryptedAccessToken", iv FROM "PlatformToken";'
+
+ platform |                                    encryptedAccessToken                                     |    iv
+----------+-----------------------------------------------------------------------------------------------+----------
+ instagram| 20ae7e3e3c75fb6ffa57c59b78344fa74b109b5af1af04b50f5e07f77107e15d70bf5932455f552382abf96dd1d58d1d1be06c254840f1d58f69f13c9b592a | e5858dba474eafc1de21eec9
+ x        | fe7c1f21837352fa91153a99f0da0c0619724d5d1a45b5fc681fb1ff331be2e09296de55ac3d31d159d2c1216916dd2699e0e7e6cdd3ab054cc1daf3f0cde2 | 48720a007e75feed547ae2b8
+```
+
+Both values are opaque random-looking hex — nothing resembling the actual `fake-token-...` string the platform issued. The adapter decrypts the token in memory only for the duration of each publish call, sends it as a real `Authorization: Bearer` header, and never logs or persists it in plaintext.
 
 ## Reliability
 

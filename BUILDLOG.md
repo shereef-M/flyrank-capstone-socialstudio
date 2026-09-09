@@ -39,3 +39,11 @@ AI extracted the publish logic into a shared `publishCampaign()` function (so th
 Same mistake pattern as Phase 3, happened again: a file AI gave me to create (`src/lib/publish-campaign.ts`) never actually got typed/saved on my end, and the app crashed on startup with "Cannot find module" pointing straight at the missing file. Same fix both times check the fileactually exists before assuming it's just an editor error. Worth being more careful about this myself going forward, not just relying on AI to catch it after the fact.
 
 Verification here was fully live, including the actual failure mode we care about: scheduled a campaign 15 seconds out, deliberately did NOT start the worker, confirmed via the API that the campaign sat at "scheduled" with posts still "queued" well past its scheduled time proving the job wasn't lost with nothing watching. Then started the worker for the first time and watched it immediately pick up and complete the overdue job, with no duplicate posts. That's the actual crash-resume guarantee, demonstrated end to end, not asserted.
+
+## Phase 4 — OAuth token encryption at rest
+
+AI built AES-256-GCM encrypt/decrypt helpers and wired the adapters to actually fetch a token from the fake platform's OAuth endpoint (which had existed since Phase 3 but was never called), encrypt it before storing, and decrypt it only in memory when making a request.
+
+Same recurring mistake as Phases 3 and 4 a file (`platform-tokens.ts`) didn't get created on my end, caught the same way: `tsc --noEmit` pointed straight at the missing module. This is clearly a pattern in how I'm working through multi-file handoffs, not one-off slips worth slowing down and confirming each file actually saved before moving to the next one, rather than assuming.
+
+Verification: an automated test suite (round-trip, no plaintext leakage, random IV, tamper detection all passing), plus direct inspection of the Postgres table itself via psql, confirming the stored value is opaque hex with no resemblance to the actual token string. Deliberately did not build any endpoint that decrypts a token on demand, even for demo convenience that would undermine the whole point of encrypting it.
