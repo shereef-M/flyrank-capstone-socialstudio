@@ -13,6 +13,7 @@ import {
   FakeXPublisher,
 } from "../adapters/social-publisher";
 import type { SocialPublisher } from "../adapters/social-publisher";
+import { rollupCampaignStatus } from "../lib/campaign-status";
 import type { Platform } from "@prisma/client";
 
 export const campaignsRouter = Router();
@@ -126,10 +127,22 @@ campaignsRouter.post("/campaigns/:id/publish-now", async (req, res) => {
           { simulateRateLimit },
         );
 
-        // Note: status is NOT set to "published" here. The platform only
-        // *accepted* the request — it hasn't confirmed delivery yet. Status
-        // only ever flips to "published" once the signed webhook arrives
-        // (see routes/webhook.ts). This is the whole point of the design.
+        if (result.deduplicated) {
+          // The platform already confirmed this exact post previously — no
+          // new webhook is coming to correct the status this time, so
+          // reflect "published" immediately rather than leaving it stuck
+          // on "publishing" forever.
+          await prisma.socialPostEntry.update({
+            where: { id: post.id },
+            data: {
+              status: "published",
+              externalPostId: result.externalPostId,
+            },
+          });
+        }
+        // Otherwise: leave status as "publishing" — the real webhook
+        // confirmation (routes/webhook.ts) is what flips it to "published".
+
         return { platform: post.platform, accepted: true, ...result };
       } catch (err) {
         await prisma.socialPostEntry.update({
@@ -144,6 +157,8 @@ campaignsRouter.post("/campaigns/:id/publish-now", async (req, res) => {
       }
     }),
   );
+
+  await rollupCampaignStatus(campaign.id);
 
   res.json({ campaignId: campaign.id, results });
 });

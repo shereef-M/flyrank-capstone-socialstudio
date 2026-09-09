@@ -2,6 +2,7 @@ import { Router } from "express";
 import express from "express";
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma";
+import { rollupCampaignStatus } from "../lib/campaign-status";
 
 export const webhookRouter = Router();
 
@@ -66,19 +67,7 @@ webhookRouter.post(
         where: { id: payload.socialPostEntryId },
         data: { status: "published", externalPostId: payload.externalPostId },
       });
-
-      // If every post in this campaign is now published, the campaign
-      // itself is done — this is a rollup, not a separate source of truth.
-      const siblings = await prisma.socialPostEntry.findMany({
-        where: { campaignId: updatedPost.campaignId },
-      });
-      const allPublished = siblings.every((p) => p.status === "published");
-      if (allPublished) {
-        await prisma.campaign.update({
-          where: { id: updatedPost.campaignId },
-          data: { status: "published" },
-        });
-      }
+      await rollupCampaignStatus(updatedPost.campaignId);
     }
     res.status(200).json({ received: true });
   },
