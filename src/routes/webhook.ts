@@ -1,29 +1,10 @@
 import { Router } from "express";
 import express from "express";
-import crypto from "node:crypto";
 import { prisma } from "../lib/prisma";
 import { rollupCampaignStatus } from "../lib/campaign-status";
+import { isValidSignature } from "../lib/webhook-signature";
 
 export const webhookRouter = Router();
-
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "dev-secret-change-me";
-
-function isValidSignature(
-  rawBody: Buffer,
-  signatureHeader: string | undefined,
-): boolean {
-  if (!signatureHeader) return false;
-  const expected = crypto
-    .createHmac("sha256", WEBHOOK_SECRET)
-    .update(rawBody)
-    .digest("hex");
-
-  const expectedBuf = Buffer.from(expected);
-  const givenBuf = Buffer.from(signatureHeader);
-  // timingSafeEqual throws on mismatched lengths, so guard first.
-  if (expectedBuf.length !== givenBuf.length) return false;
-  return crypto.timingSafeEqual(expectedBuf, givenBuf);
-}
 
 webhookRouter.post(
   "/webhook/social-delivery",
