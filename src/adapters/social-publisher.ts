@@ -1,4 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { getAccessToken } from "../lib/platform-tokens";
+import type { Platform } from "@prisma/client";
 
 export type PublishParams = {
   socialPostEntryId: string;
@@ -20,7 +22,7 @@ export type PublishResult = {
 export interface SocialPublisher {
   publish(
     params: PublishParams,
-    opts?: { simulateRateLimit?: boolean }
+    opts?: { simulateRateLimit?: boolean },
   ): Promise<PublishResult>;
 }
 
@@ -34,39 +36,50 @@ const MAX_RETRIES = 3;
  * that's the whole point of the adapter pattern.
  */
 abstract class FakePlatformPublisherBase implements SocialPublisher {
-  protected abstract platform: string;
+  protected abstract platform: Platform;
 
   async publish(
     params: PublishParams,
-    opts: { simulateRateLimit?: boolean } = {}
+    opts: { simulateRateLimit?: boolean } = {},
   ): Promise<PublishResult> {
+    // Decrypted only for the lifetime of this call — never logged, never
+    // written back to disk in plaintext. getAccessToken() handles fetching
+    // + encrypting a new one the first time this platform is used.
+    const token = await getAccessToken(this.platform);
+
     let attempt = 0;
 
     while (true) {
       attempt++;
 
-      const res = await fetch(`${FAKE_PLATFORM_BASE_URL}/${this.platform}/posts`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": params.idempotencyKey,
-          // Only force the simulated 429 on the first attempt — this lets a
-          // demo show the full story: rate-limited once, backs off exactly
-          // as long as told, then succeeds on retry.
-          ...(opts.simulateRateLimit && attempt === 1
-            ? { "X-Simulate-429": "true" }
-            : {}),
+      const res = await fetch(
+        `${FAKE_PLATFORM_BASE_URL}/${this.platform}/posts`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": params.idempotencyKey,
+            Authorization: `Bearer ${token}`,
+            // Only force the simulated 429 on the first attempt — this lets a
+            // demo show the full story: rate-limited once, backs off exactly
+            // as long as told, then succeeds on retry.
+            ...(opts.simulateRateLimit && attempt === 1
+              ? { "X-Simulate-429": "true" }
+              : {}),
+          },
+          body: JSON.stringify({
+            socialPostEntryId: params.socialPostEntryId,
+            caption: params.caption,
+            imageUrl: params.imageUrl,
+          }),
         },
-        body: JSON.stringify({
-          socialPostEntryId: params.socialPostEntryId,
-          caption: params.caption,
-          imageUrl: params.imageUrl,
-        }),
-      });
+      );
 
       if (res.status === 429) {
         if (attempt > MAX_RETRIES) {
-          throw new Error(`${this.platform}: still rate-limited after ${MAX_RETRIES} retries`);
+          throw new Error(
+            `${this.platform}: still rate-limited after ${MAX_RETRIES} retries`,
+          );
         }
         const retryAfterSeconds = Number(res.headers.get("Retry-After") ?? "1");
         await sleep(retryAfterSeconds * 1000);
@@ -75,19 +88,27 @@ abstract class FakePlatformPublisherBase implements SocialPublisher {
 
       if (!res.ok) {
         const body = await res.text();
-        throw new Error(`${this.platform}: publish failed (${res.status}): ${body}`);
+        throw new Error(
+          `${this.platform}: publish failed (${res.status}): ${body}`,
+        );
       }
 
-      const data = (await res.json()) as { postId: string; deduplicated?: boolean };
-      return { externalPostId: data.postId, deduplicated: Boolean(data.deduplicated) };
+      const data = (await res.json()) as {
+        postId: string;
+        deduplicated?: boolean;
+      };
+      return {
+        externalPostId: data.postId,
+        deduplicated: Boolean(data.deduplicated),
+      };
     }
   }
 }
 
 export class FakeInstagramPublisher extends FakePlatformPublisherBase {
-  protected platform = "instagram";
+  protected platform: Platform = "instagram";
 }
 
 export class FakeXPublisher extends FakePlatformPublisherBase {
-  protected platform = "x";
+  protected platform: Platform = "x";
 }
