@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "test": "vitest run"
+    "test": "vitest run",
+    "worker": "tsx watch src/worker.ts"
   },
   "repository": {
     "type": "git",
@@ -28,6 +29,7 @@
     "bullmq": "^6.3.4",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "ioredis": "^6.0.0",
     "sharp": "^0.35.4",
     "zod": "^4.5.4"
   },

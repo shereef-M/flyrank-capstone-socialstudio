@@ -8,12 +8,8 @@ import {
   generateImageVariants,
 } from "../lib/image-pipeline";
 import { composeCaption } from "../lib/caption-composer";
-import {
-  FakeInstagramPublisher,
-  FakeXPublisher,
-} from "../adapters/social-publisher";
-import type { SocialPublisher } from "../adapters/social-publisher";
-import { rollupCampaignStatus } from "../lib/campaign-status";
+import { publishCampaign } from "../lib/publish-campaign";
+import { publishQueue } from "../queue/publish-queue";
 import type { Platform } from "@prisma/client";
 
 export const campaignsRouter = Router();
@@ -27,11 +23,6 @@ const createCampaignSchema = z.object({
 });
 
 const PLATFORMS: Platform[] = ["instagram", "x"];
-
-const publishers: Record<Platform, SocialPublisher> = {
-  instagram: new FakeInstagramPublisher(),
-  x: new FakeXPublisher(),
-};
 
 campaignsRouter.post("/campaigns", async (req, res) => {
   const parsed = createCampaignSchema.safeParse(req.body);
@@ -91,74 +82,58 @@ campaignsRouter.get("/campaigns/:id", async (req, res) => {
 });
 
 campaignsRouter.post("/campaigns/:id/publish-now", async (req, res) => {
-  const campaign = await prisma.campaign.findUnique({
+  const simulateRateLimit = req.body?.simulateRateLimit === true;
+  try {
+    const result = await publishCampaign(req.params.id, { simulateRateLimit });
+    res.json(result);
+  } catch (err) {
+    res
+      .status(404)
+      .json({ error: err instanceof Error ? err.message : "not found" });
+  }
+});
+
+const scheduleSchema = z.object({
+  scheduledFor: z.string().datetime(),
+});
+
+campaignsRouter.post("/campaigns/:id/schedule", async (req, res) => {
+  const parsed = scheduleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const scheduledFor = new Date(parsed.data.scheduledFor);
+  const delayMs = scheduledFor.getTime() - Date.now();
+  if (delayMs < 0) {
+    return res
+      .status(400)
+      .json({ error: "scheduledFor must be in the future" });
+  }
+
+  const existing = await prisma.campaign.findUnique({
     where: { id: req.params.id },
-    include: { posts: true },
   });
-  if (!campaign) {
+  if (!existing) {
     return res.status(404).json({ error: "Campaign not found" });
   }
 
-  await prisma.campaign.update({
-    where: { id: campaign.id },
-    data: { status: "publishing" },
+  const campaign = await prisma.campaign.update({
+    where: { id: req.params.id },
+    data: { status: "scheduled", scheduledFor },
   });
 
-  // Set to true only to demo the rate-limit + backoff path — never in
-  // normal use. See adapters/social-publisher.ts for what it actually does.
-  const simulateRateLimit = req.body?.simulateRateLimit === true;
-
-  const results = await Promise.all(
-    campaign.posts.map(async (post) => {
-      try {
-        await prisma.socialPostEntry.update({
-          where: { id: post.id },
-          data: { status: "publishing" },
-        });
-
-        const publisher = publishers[post.platform];
-        const result = await publisher.publish(
-          {
-            socialPostEntryId: post.id,
-            caption: post.caption ?? "",
-            imageUrl: post.imageVariantUrl ?? "",
-            idempotencyKey: post.idempotencyKey,
-          },
-          { simulateRateLimit },
-        );
-
-        if (result.deduplicated) {
-          // The platform already confirmed this exact post previously — no
-          // new webhook is coming to correct the status this time, so
-          // reflect "published" immediately rather than leaving it stuck
-          // on "publishing" forever.
-          await prisma.socialPostEntry.update({
-            where: { id: post.id },
-            data: {
-              status: "published",
-              externalPostId: result.externalPostId,
-            },
-          });
-        }
-        // Otherwise: leave status as "publishing" — the real webhook
-        // confirmation (routes/webhook.ts) is what flips it to "published".
-
-        return { platform: post.platform, accepted: true, ...result };
-      } catch (err) {
-        await prisma.socialPostEntry.update({
-          where: { id: post.id },
-          data: { status: "failed" },
-        });
-        return {
-          platform: post.platform,
-          accepted: false,
-          error: err instanceof Error ? err.message : "unknown error",
-        };
-      }
-    }),
+  // Using the campaign id as the job id means re-scheduling the same
+  // campaign replaces its pending job instead of creating a second one.
+  const existingJob = await publishQueue.getJob(campaign.id);
+  if (existingJob) {
+    await existingJob.remove();
+  }
+  await publishQueue.add(
+    "publish",
+    { campaignId: campaign.id },
+    { jobId: campaign.id, delay: delayMs },
   );
 
-  await rollupCampaignStatus(campaign.id);
-
-  res.json({ campaignId: campaign.id, results });
+  res.json({ campaign });
 });
