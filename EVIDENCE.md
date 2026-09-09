@@ -143,16 +143,28 @@ Confirmed the real `externalPostId` was untouched afterward — the forged
 
 ### ✅ Status transitions only after verified webhook
 
-`publish-now` never sets status to `"published"` itself — only the
-signature-verified webhook handler does. This was actually caught failing
-in an edge case during testing: a _duplicated_ publish left status stuck
-on `"publishing"` forever, since no new webhook arrives for an already-
-confirmed post. Fixed by having `publish-now` recognize a deduplicated
-result and reflect `"published"` immediately in that specific case — see
-BUILDLOG.md. Re-tested after the fix: duplicate publish now correctly
-shows `"published"` right away.
+`publish-now` never sets status to `"published"` itself only the signature-verified webhook handler does. This was actually caught failing in an edge case during testing: a _duplicated_ publish left status stuck on `"publishing"` forever, since no new webhook arrives for an already- confirmed post. Fixed by having `publish-now` recognize a deduplicated result and reflect `"published"` immediately in that specific case see BUILDLOG.md. Re-tested after the fix: duplicate publish now correctly shows `"published"` right away.
 
 ## Tests & documentation
 
-- [ ] Full test coverage (dimensions, duplicate-publish, forged webhook, rate limits) — pending (Phase 4)
+### ✅ Full test coverage (dimensions, forged webhook, rate limits) / ⚠️ duplicate-publish proven live rather than automated
+
+18 automated tests across 5 files, all passing:
+
+```
+✓ tests/crypto.test.ts (4 tests)
+✓ tests/webhook-signature.test.ts (5 tests)
+✓ tests/social-publisher-retry.test.ts (5 tests)
+✓ tests/caption-composer.test.ts (3 tests)
+✓ tests/image-pipeline.test.ts (1 test)
+
+Test Files  5 passed (5)
+     Tests  18 passed (18)
+```
+
+This covers dimensions (image-pipeline), forged/tampered webhook rejection (webhook-signature), and rate-limit retry/backoff (social-publisher-retry) as genuine isolated unit tests no live server or database needed to run them.
+
+**Deliberate gap:** duplicate-publish (idempotent publishing) is not covered by an automated test. That guarantee depends on real coordination between our database's unique constraint, the fake platform's in-memory idempotency-key store, and a live HTTP round trip mocking all of that faithfully would mean largely reimplementing Prisma and the fake server inside the test, which risks testing the mock's behavior rather than the real one. Instead this is proven with live evidence under "Idempotent
+publishing" above: two full publish-now calls against the real database and fake server, returning the identical externalPostId with deduplicated: true on the second call which is also where a real bug in this exact behavior was caught and fixed (see BUILDLOG.md). I'd rather state this gap plainly than pad the suite with a test that doesn't actually exercise the real integration.
+
 - [ ] README + architecture diagram + setup instructions — pending (Phase 5)

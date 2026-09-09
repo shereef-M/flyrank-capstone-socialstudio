@@ -47,3 +47,13 @@ AI built AES-256-GCM encrypt/decrypt helpers and wired the adapters to actually 
 Same recurring mistake as Phases 3 and 4 a file (`platform-tokens.ts`) didn't get created on my end, caught the same way: `tsc --noEmit` pointed straight at the missing module. This is clearly a pattern in how I'm working through multi-file handoffs, not one-off slips worth slowing down and confirming each file actually saved before moving to the next one, rather than assuming.
 
 Verification: an automated test suite (round-trip, no plaintext leakage, random IV, tamper detection all passing), plus direct inspection of the Postgres table itself via psql, confirming the stored value is opaque hex with no resemblance to the actual token string. Deliberately did not build any endpoint that decrypts a token on demand, even for demo convenience that would undermine the whole point of encrypting it.
+
+
+## Phase 4 — Turning manual proofs into automated tests
+
+AI extracted the webhook signature check into its own file (`webhook-signature.ts`) purely so it could be unit tested without needing Express or a database, and wrote tests mocking `fetch` and the token fetch to exercise the retry/backoff logic the same way.
+
+One real bug caught by the tests themselves, not by inspection: the webhook-signature test failed on its very first run because
+`webhook.ts`'s original signature check read `WEBHOOK_SECRET` from the environment once, at module load time, into a top-level constant. A test that changed the env var afterward had no effect on it. Fixed by reading the secret fresh inside the function on every call which is also just more correct in general, not only more testable.
+
+Deliberately did not write an automated test for duplicate-publish (idempotency) it depends on real coordination between the database's unique constraint and the fake platform's in-memory store, and faking that convincingly would mean re-implementing both inside the test. Chose to rely on the live evidence already captured for that behavior instead of writing a test that would exercise a mock rather than the real thing.
