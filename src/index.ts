@@ -3,8 +3,16 @@ import express from "express";
 import path from "node:path";
 import { prisma } from "./lib/prisma";
 import { campaignsRouter } from "./routes/campaigns";
+import { webhookRouter } from "./routes/webhook";
 
 const app = express();
+
+// Mounted BEFORE express.json() — this route needs the raw, unparsed
+// request body to verify the HMAC signature. If express.json() ran first,
+// it would consume the body stream, and re-serializing the parsed JSON
+// could produce different bytes than what was actually signed.
+app.use(webhookRouter);
+
 app.use(express.json());
 
 // Serves generated image variants at /uploads/<file>.jpg
@@ -15,7 +23,6 @@ app.use(
 
 app.get("/health", async (_req, res) => {
   try {
-    // A trivial query — if the DB connection is broken, this throws.
     await prisma.$queryRaw`SELECT 1`;
     res.json({ status: "ok", database: "connected" });
   } catch (err) {
