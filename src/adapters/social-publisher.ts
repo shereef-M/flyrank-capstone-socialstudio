@@ -1,5 +1,9 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { getAccessToken } from "../lib/platform-tokens";
+import {
+  recordRateLimitRetry,
+  recordNetworkErrorRetry,
+} from "../lib/retry-metrics";
 import type { Platform } from "@prisma/client";
 
 export type PublishParams = {
@@ -52,9 +56,9 @@ abstract class FakePlatformPublisherBase implements SocialPublisher {
     while (true) {
       attempt++;
 
-      const res = await fetch(
-        `${FAKE_PLATFORM_BASE_URL}/${this.platform}/posts`,
-        {
+      let res: Response;
+      try {
+        res = await fetch(`${FAKE_PLATFORM_BASE_URL}/${this.platform}/posts`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -72,8 +76,25 @@ abstract class FakePlatformPublisherBase implements SocialPublisher {
             caption: params.caption,
             imageUrl: params.imageUrl,
           }),
-        },
-      );
+        });
+      } catch (err) {
+        // The platform is unreachable entirely — connection refused, DNS
+        // failure, timeout — not just rate-limiting us. Treated the same
+        // as a 429: back off and retry, since this is often transient (a
+        // deploy restart, a brief network blip), not a permanent failure.
+        if (attempt > MAX_RETRIES) {
+          const reason =
+            err instanceof Error ? err.message : "unknown network error";
+          throw new Error(
+            `${this.platform}: still unreachable after ${MAX_RETRIES} retries (${reason})`,
+          );
+        }
+        recordNetworkErrorRetry();
+        // No Retry-After header exists for a connection failure — a short
+        // exponential backoff stands in for it instead.
+        await sleep(2 ** attempt * 100);
+        continue;
+      }
 
       if (res.status === 429) {
         if (attempt > MAX_RETRIES) {
@@ -81,6 +102,7 @@ abstract class FakePlatformPublisherBase implements SocialPublisher {
             `${this.platform}: still rate-limited after ${MAX_RETRIES} retries`,
           );
         }
+        recordRateLimitRetry();
         const retryAfterSeconds = Number(res.headers.get("Retry-After") ?? "1");
         await sleep(retryAfterSeconds * 1000);
         continue;

@@ -4,6 +4,7 @@ import path from "node:path";
 import { prisma } from "./lib/prisma";
 import { campaignsRouter } from "./routes/campaigns";
 import { webhookRouter } from "./routes/webhook";
+import { metricsRouter } from "./routes/metrics";
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.get("/health", async (_req, res) => {
 });
 
 app.use(campaignsRouter);
+app.use(metricsRouter);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(port, () => {
