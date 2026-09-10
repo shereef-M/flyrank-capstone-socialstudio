@@ -57,3 +57,11 @@ One real bug caught by the tests themselves, not by inspection: the webhook-sign
 `webhook.ts`'s original signature check read `WEBHOOK_SECRET` from the environment once, at module load time, into a top-level constant. A test that changed the env var afterward had no effect on it. Fixed by reading the secret fresh inside the function on every call which is also just more correct in general, not only more testable.
 
 Deliberately did not write an automated test for duplicate-publish (idempotency) it depends on real coordination between the database's unique constraint and the fake platform's in-memory store, and faking that convincingly would mean re-implementing both inside the test. Chose to rely on the live evidence already captured for that behavior instead of writing a test that would exercise a mock rather than the real thing.
+
+## Post-submission — metrics endpoint and network-failure retry
+
+Two improvements suggested after FlyRank's approval, both from identifying gaps rather than adding features for their own sake:
+
+A `/metrics` endpoint was cheap to build because BullMQ already tracksjob completion/failure counts internally `getJobCounts()` exposes that for free, no new tracking needed. The only genuinely new piece was a small in-memory counter for adapter-level retries, which isn't captured anywhere else.
+
+The more important fix: the retry logic only ever handled a 429 response. A network-level failure (the platform being completely unreachable, not just rate-limiting) would `fetch()`throw and fail immediately with zero retry inconsistent with a project whose whole point is handling failure modes gracefully. This was AI's own gap in the original Phase 3 implementation, caught not by testing but by directly asking "what happens if the dependency is just down?" before writing any code worth noting since most of the bugs caught so far were found by running tests, not by asking the right question upfront.

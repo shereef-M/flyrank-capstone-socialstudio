@@ -168,3 +168,32 @@ This covers dimensions (image-pipeline), forged/tampered webhook rejection (webh
 publishing" above: two full publish-now calls against the real database and fake server, returning the identical externalPostId with deduplicated: true on the second call which is also where a real bug in this exact behavior was caught and fixed (see BUILDLOG.md). I'd rather state this gap plainly than pad the suite with a test that doesn't actually exercise the real integration.
 
 - [ ] README + architecture diagram + setup instructions — pending (Phase 5)
+
+## Post-submission improvements
+
+These weren't part of the original Definition-of-Done added afterward to close two real gaps identified during review.
+
+### ✅ Operational metrics endpoint
+
+```
+$ curl http://localhost:3000/metrics
+{"campaigns":{"draft":5,"published":4},
+ "posts":{"queued":9,"published":9},
+ "queue":{"active":0,"completed":2,"delayed":0,"failed":0,"prioritized":0,"waiting":0,"waiting-children":0},
+ "adapterRetries":{"rateLimitRetries":0,"networkErrorRetries":0}}
+```
+
+Real data reflecting actual usage campaign/post status breakdown from the database, live job counts from BullMQ (no separate tracking needed, it already counts this), and adapter-level retry counters.
+
+### ✅ Retries a genuinely unreachable platform, not just rate limits
+
+Previously, only a 429 response triggered backoff-and-retry  a fully unreachable platform (connection refused, not rate-limited) would fail immediately with no retry at all, which was inconsistent with the project's whole "handles failure modes correctly" premise.
+
+```
+✓ tests/social-publisher-network-failure.test.ts (3 tests) 3036ms
+  ✓ retries after the platform is unreachable, then succeeds
+  ✓ gives up with a clear error after the platform stays unreachable
+  ✓ does not retry forever — respects the same retry limit as rate limiting
+```
+
+Confirmed timing matches the intended exponential backoff (200ms → 400ms → 800ms across 3 retries before giving up, ~1.4s total for the give-up case).
