@@ -27,6 +27,10 @@ services:
   - type: keyvalue
     name: socialstudio-redis
     plan: free
+    # noeviction, not the default allkeys-lru — this Redis holds BullMQ job
+    # data, not a cache. LRU eviction under memory pressure would silently
+    # drop scheduled jobs, undermining the crash-recovery guarantee.
+    maxmemoryPolicy: noeviction
     # No public internet access needed — only our own web service talks
     # to this, over Render's private network via the fromService URL above.
     ipAllowList: []
