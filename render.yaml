@@ -27,6 +27,9 @@ services:
   - type: keyvalue
     name: socialstudio-redis
     plan: free
+    # No public internet access needed — only our own web service talks
+    # to this, over Render's private network via the fromService URL above.
+    ipAllowList: []
 
 databases:
   - name: socialstudio-db
