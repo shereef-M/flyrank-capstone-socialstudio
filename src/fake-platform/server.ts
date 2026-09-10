@@ -8,10 +8,14 @@ app.use(express.json());
 const PORT = process.env.FAKE_PLATFORM_PORT
   ? Number(process.env.FAKE_PLATFORM_PORT)
   : 4000;
+
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "dev-secret-change-me";
+// Falls back to the same port the main app binds to (PORT, or 3000 for
+// local dev) — hardcoding 3000 here would break once deployed, where the
+// platform assigns whatever port it wants via PORT.
 const CALLBACK_URL =
   process.env.FAKE_PLATFORM_CALLBACK_URL ||
-  "http://localhost:3000/webhook/social-delivery";
+  `http://localhost:${process.env.PORT || 3000}/webhook/social-delivery`;
 
 // idempotencyKey -> the result we returned the first time we saw that key.
 const publishedPosts = new Map<string, { postId: string; platform: string }>();
